@@ -1,0 +1,12 @@
+# Credentials and local secrets
+resources/serviceAccountKey.json
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+
+# Local development files
+.venv/
+__pycache__/
+*.py[cod]
+temp/

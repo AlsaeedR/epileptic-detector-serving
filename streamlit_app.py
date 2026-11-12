@@ -3,54 +3,18 @@ import numpy as np
 import tensorflow as tf
 import cv2
 import os
-import pandas as pd
 from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import LSTM, GlobalAveragePooling2D
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras import Sequential
-import firebase_admin
-from firebase_admin import credentials, firestore
 
 # Ensure TensorFlow is running in eager mode
 tf.config.run_functions_eagerly(True)
 
-# -------------------- SETUP --------------------
-if not firebase_admin._apps:
-    cred = credentials.Certificate("resources/serviceAccountKey.json")
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
-
 # -------------------- CONSTANTS --------------------
 SEQUENCE_LENGTH = 30
 IMAGE_SIZE = (224, 224)
-MODEL_PATH = os.path.join("models", "models/seizure_lstm_model.h5")
-
-# -------------------- DATABASE CLASS --------------------
-class SeizureDatabase:
-    def __init__(self):
-        self.collection = db.collection('seizure_predictions')
-
-    def add_prediction(self, video_name, label, confidence):
-        try:
-            self.collection.add({
-                'video_name': str(os.path.basename(video_name)),
-                'predicted_label': str(label),
-                'confidence': float(confidence),
-                'timestamp': firestore.SERVER_TIMESTAMP
-            })
-            return True
-        except Exception as e:
-            st.error(f"Failed to save prediction: {str(e)}")
-            return False
-
-    def get_predictions(self):
-        try:
-            docs = self.collection.order_by('timestamp', direction=firestore.Query.DESCENDING).stream()
-            return pd.DataFrame([doc.to_dict() for doc in docs])
-        except Exception as e:
-            st.error(f"Failed to fetch predictions: {str(e)}")
-            return pd.DataFrame()
+MODEL_PATH = os.path.join("models", "seizure_lstm_model.h5")
 
 # -------------------- MODEL LOADING --------------------
 @st.cache_resource
@@ -129,7 +93,7 @@ def extract_features(sequences, feature_extractor):
     return np.array(features, dtype=np.float32)
 
 # -------------------- PREDICTION --------------------
-def predict_seizure(video_path, model, feature_extractor, db):
+def predict_seizure(video_path, model, feature_extractor):
     try:
         frames = extract_frames(video_path)
         if len(frames) < SEQUENCE_LENGTH:
@@ -152,7 +116,6 @@ def predict_seizure(video_path, model, feature_extractor, db):
         label = label_map.get(class_idx, str(class_idx))
         confidence = float(avg_pred[class_idx])
 
-        db.add_prediction(video_path, label, confidence)
         return f"Prediction: {label} (Confidence: {confidence:.2%})", label, confidence
 
     except Exception as e:
@@ -169,7 +132,6 @@ def main():
     with st.spinner("Loading resources..."):
         model = load_seizure_model()
         feature_extractor = load_feature_extractor()
-        seizure_db = SeizureDatabase()
 
     if model is None:
         st.error("Critical Error: Could not load required resources")
@@ -198,7 +160,7 @@ def main():
         with col2:
             with st.spinner("Analyzing video..."):
                 result, label, confidence = predict_seizure(
-                    video_path, model, feature_extractor, seizure_db)
+                    video_path, model, feature_extractor)
             
             if label:
                 st.success(result)
@@ -211,19 +173,6 @@ def main():
             os.remove(video_path)
         except:
             pass
-
-    st.sidebar.header("Prediction History")
-    if st.sidebar.button("Refresh History"):
-        history = seizure_db.get_predictions()
-        if not history.empty:
-            st.sidebar.dataframe(history)
-            st.sidebar.download_button(
-                "Download CSV",
-                history.to_csv(index=False),
-                "seizure_history.csv"
-            )
-        else:
-            st.sidebar.info("No history available")
 
 if __name__ == "__main__":
     main()
