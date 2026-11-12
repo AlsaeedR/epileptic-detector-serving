@@ -56,57 +56,44 @@ def load_feature_extractor():
     return model
 
 # -------------------- VIDEO PROCESSING --------------------
-def extract_frames(video_path):
-    cap = cv2.VideoCapture(video_path)
-    frames = []
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = cv2.resize(frame, IMAGE_SIZE)
-        frame = tf.keras.applications.mobilenet_v2.preprocess_input(frame)
-        frames.append(frame)
-    cap.release()
-    return frames
-
-def create_sequences(frames):
-    return [
-        frames[i:i + SEQUENCE_LENGTH]
-        for i in range(0, len(frames) - SEQUENCE_LENGTH + 1, SEQUENCE_LENGTH)
-    ]
-
-def extract_features(sequences, feature_extractor):
-    if not sequences:
-        return np.array([])
-    
-    sequences = np.array(sequences, dtype=np.float32)
-    batch_size, seq_len, h, w, c = sequences.shape
-    features = []
-    
-    for seq in sequences:
-        flat = seq.reshape(-1, h, w, c)
-        feat = feature_extractor.predict(flat, verbose=0)
-        features.append(feat.reshape(seq_len, -1))
-    
-    return np.array(features, dtype=np.float32)
-
 # -------------------- PREDICTION --------------------
 def predict_seizure(video_path, model, feature_extractor):
-    try:
-        frames = extract_frames(video_path)
-        if len(frames) < SEQUENCE_LENGTH:
-            return "Error: Video too short (needs at least 30 frames)", None, None
+    cap = cv2.VideoCapture(video_path)
+    sequence = []
+    prediction_sum = None
+    sequence_count = 0
+    frame_count = 0
 
-        sequences = create_sequences(frames)
-        if not sequences:
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame_count += 1
+            frame = cv2.resize(frame, IMAGE_SIZE)
+            frame = tf.keras.applications.mobilenet_v2.preprocess_input(frame)
+            sequence.append(frame)
+
+            if len(sequence) == SEQUENCE_LENGTH:
+                sequence_batch = np.asarray(sequence, dtype=np.float32)
+                sequence.clear()
+                features = feature_extractor.predict(sequence_batch, verbose=0)
+                sequence_prediction = model.predict(
+                    np.expand_dims(features, axis=0), verbose=0
+                )[0]
+                if prediction_sum is None:
+                    prediction_sum = sequence_prediction.copy()
+                else:
+                    prediction_sum += sequence_prediction
+                sequence_count += 1
+
+        if frame_count < SEQUENCE_LENGTH:
+            return "Error: Video too short (needs at least 30 frames)", None, None
+        if sequence_count == 0:
             return "Error: Could not create sequences", None, None
 
-        features = extract_features(sequences, feature_extractor)
-        if features.size == 0:
-            return "Error: Feature extraction failed", None, None
-
-        preds = model.predict(features, verbose=0)
-        avg_pred = np.mean(preds, axis=0)
+        avg_pred = prediction_sum / sequence_count
         class_idx = int(np.argmax(avg_pred))
 
         # Manual label map
@@ -118,6 +105,8 @@ def predict_seizure(video_path, model, feature_extractor):
 
     except Exception as e:
         return f"Error during prediction: {str(e)}", None, None
+    finally:
+        cap.release()
 
 # -------------------- STREAMLIT APP --------------------
 def main():
