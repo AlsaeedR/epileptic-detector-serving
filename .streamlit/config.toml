@@ -8,5 +8,3 @@ base = "light"
 [browser]
 gatherUsageStats = false
 
-[general]
-mainModule = "epileptic-detector-serving/seizure_detection_app.py"
