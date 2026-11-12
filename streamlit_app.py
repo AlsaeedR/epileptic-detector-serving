@@ -13,6 +13,7 @@ tf.config.run_functions_eagerly(True)
 
 # -------------------- CONSTANTS --------------------
 SEQUENCE_LENGTH = 30
+FEATURE_BATCH_SIZE = 4
 IMAGE_SIZE = (224, 224)
 MODEL_PATH = os.path.join("models", "seizure_lstm_model.h5")
 
@@ -78,7 +79,9 @@ def predict_seizure(video_path, model, feature_extractor):
             if len(sequence) == SEQUENCE_LENGTH:
                 sequence_batch = np.asarray(sequence, dtype=np.float32)
                 sequence.clear()
-                features = feature_extractor.predict(sequence_batch, verbose=0)
+                features = feature_extractor.predict(
+                    sequence_batch, batch_size=FEATURE_BATCH_SIZE, verbose=0
+                )
                 sequence_prediction = model.predict(
                     np.expand_dims(features, axis=0), verbose=0
                 )[0]
