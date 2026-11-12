@@ -53,8 +53,6 @@ def load_feature_extractor():
         base_model,
         GlobalAveragePooling2D()
     ])
-    dummy_img = np.zeros((1, 224, 224, 3), dtype=np.float32)
-    model.predict(dummy_img, verbose=0)
     return model
 
 # -------------------- VIDEO PROCESSING --------------------
